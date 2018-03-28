@@ -1,11 +1,13 @@
-#####---(Deep Learning에 사용할 data를 불러오기)---#####
+#####---(Deep Learning에 사용할 data를 불러와 DL에 넣기 전 상태로 가공하기)---#####
 ##  설명
-#   Deep learning에 사용할 data를 여러 형식에 따라 알맞게 불러오기 위한 library
+#   Deep learning에 사용할 data를 여러 형식에 따라 알맞게 불러오고 DL에 넣을 input data와 target(or label) data를 만드는 library
 
 ##  업데이트 기록지
 #   2018.03.19.월요일 : EMG 4채널 data와 28개의 marker 좌표(x,y,z,az,el,r) data를 불러오기
 #                     1개의 csv 파일은 한 피실험자의 한 번의 실험에서 얻은 EMG 4채널 data와 1개의 marker 좌표(x,y,z,az,el,r) data가 들어있음.
 #                     열의 이름은 없음
+#   2018.03.26.월요일 : Marker 값을 1000개의 구간으로 나눠 label을 만드는 함수와 label을 가지고 다시 값으로 바꾸는(대표값이 되겠지 실제값이 아닌) 함수 완성
+
 
 #####------------------------------------------------
 
