@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 #####------------------------------------------------
 ### Weight와 bias를 초기화하는 부분 (초기화하는 방법도 여러가지가 있으니 김성훈 교수님 강의 듣고 업데이트 시키기!!!!!)
 ##  Weight 초기화
-def init_weight(shape, init_type) :
+def init_weight(weight_name, shape, init_type, iter_count) :
 
     '''
 
@@ -43,6 +43,7 @@ def init_weight(shape, init_type) :
         shape       :   만들려는 weight의 shape
         init_type   :   초기값을 어떠한 유형으로 설정할 것인지
                         (0 : 설정한 표준편차에 의거하여 랜덤하게 값을 지정하는 방법, 1 : )
+        iter_count  :   Weight 초기화 방법에서 xavier 사용시 이름이 매번 달라야 해서 인위적으로 매 반복마다 업데이트
 
     Output
         원하는 크기에 원하는 유형으로 초기화된 weight
@@ -52,6 +53,9 @@ def init_weight(shape, init_type) :
 
     if init_type == 0 :
         return tf.Variable(tf.random_normal(shape, stddev=0.01))
+    elif init_type == 1 :
+        return tf.get_variable(str(weight_name + str(iter_count)), shape=shape, initializer=tf.contrib.layers.xavier_initializer())
+
 
 ##  Bias 초기화
 def init_bias(shape, init_type) :
@@ -71,6 +75,8 @@ def init_bias(shape, init_type) :
 
     if init_type == 0 :
         return tf.Variable(tf.constant(0.1, shape=shape))
+    elif init_type == 1 :
+        return tf.Variable(tf.random_normal(shape))
 
 
 
@@ -78,7 +84,7 @@ def init_bias(shape, init_type) :
 def make_wei_bias (conv_deep, conv_width, kernel_size, kernel_num, pool_num, pool_size, pool_str,
                    fc_layers_num, fc_layers_units,
                    input_data_row, input_data_col, input_data_depth, class_num,
-                   weight_init_type, bias_init_type) :
+                   weight_init_type, bias_init_type, iter_num) :
 
     '''
 
@@ -101,6 +107,7 @@ def make_wei_bias (conv_deep, conv_width, kernel_size, kernel_num, pool_num, poo
 
         weight_init_type    :   Weight의 초기값을 어떠한 유형으로 설정할 것인지
         bias_init_type      :   Bias의 초기값을 어떠한 유형으로 설정할 것인지
+        iter_num            :   Weight 초기화 방법에서 xavier 사용시 이름이 매번 달라야 해서 인위적으로 매 반복마다 업데이트
 
     Output
         weight_names_list   :   모든 weight(or bias)의 이름들이 저장된 리스트
@@ -161,7 +168,7 @@ def make_wei_bias (conv_deep, conv_width, kernel_size, kernel_num, pool_num, poo
             weight_names_list.append(now_kernel_name)
             #   해당 kernel의 초기화된 weight를 모든 weight의 값을 저장할 딕셔너리에 추가
             #weights_dic[now_kernel_name] = init_weight([1, kernel_size_now_layer[j], kernel_nums_now_layer[0], kernel_nums_now_layer[j+1]], weight_init_type)
-            weights_dic[now_kernel_name] = init_weight([kernel_size_now_layer[j], kernel_nums_now_layer[0], kernel_nums_now_layer[j + 1]], weight_init_type)
+            weights_dic[now_kernel_name] = init_weight(now_kernel_name, [kernel_size_now_layer[j], kernel_nums_now_layer[0], kernel_nums_now_layer[j + 1]], weight_init_type, iter_num)
             #   해당 kernel의 초기화된 bias를 모든 bias의 값을 저장할 딕셔너리에 추가
             biases_dic[now_kernel_name] = init_bias([kernel_nums_now_layer[j+1]], bias_init_type)
 
@@ -191,7 +198,7 @@ def make_wei_bias (conv_deep, conv_width, kernel_size, kernel_num, pool_num, poo
     fc_layers_units = [fc_input_length] + fc_layers_units + [class_num]
 
     ##  한 fully-connect layer부터 차근차근 weight와 bias 생성
-    print('Fully-connect layer에 해당하는 weight와 bias를 생성하고 있습니다.')
+    print() ; print('Fully-connect layer에 해당하는 weight와 bias를 생성하고 있습니다.')
     for m in trange(fc_layers_num) :
 
         ##  원하는 크기와 개수에 맞는 초기화된 weight와 bias를 생성
@@ -200,22 +207,21 @@ def make_wei_bias (conv_deep, conv_width, kernel_size, kernel_num, pool_num, poo
         #   해당 layer의 weight의 이름을 모든 weight(or bias) 이름을 기록해둘 list에 추가
         weight_names_list.append(now_layer_name)
         #   해당 layer의 초기화된 weight를 모든 weight의 값을 저장할 딕셔너리에 추가
-        weights_dic[now_layer_name] = init_weight([fc_layers_units[m], fc_layers_units[m + 1]], weight_init_type)
+        weights_dic[now_layer_name] = init_weight(now_layer_name, [fc_layers_units[m], fc_layers_units[m + 1]], weight_init_type ,iter_num)
         #   해당 layer의 초기화된 bias를 모든 bias의 값을 저장할 딕셔너리에 추가
         biases_dic[now_layer_name] = init_bias([fc_layers_units[m+1]], bias_init_type)
 
 
     ### 마지막 fully-connected layer를 지나 output layer로 갈 때의 weight와 bias 생성
-    print('Output layer에 해당하는 weight와 bias를 생성하고 있습니다.')
+    print() ; print('Output layer에 해당하는 weight와 bias를 생성하고 있습니다.')
     #   Output layer의 weight(or bias) 이름을 모든 weight(or bias) 이름을 부여
     now_layer_name = 'output_layer'
     #   Output layer의 weight 이름을 모든 weight(or bias) 이름을 기록해둘 list에 추가
     weight_names_list.append(now_layer_name)
     #   Output layer의 초기화된 weight를 모든 weight의 값을 저장할 딕셔너리에 추가
-    weights_dic[now_layer_name] = init_weight([fc_layers_units[fc_layers_num], fc_layers_units[-1]], weight_init_type)
+    weights_dic[now_layer_name] = init_weight(now_layer_name, [fc_layers_units[fc_layers_num], fc_layers_units[-1]], weight_init_type, iter_num)
     #   Output layer의 초기화된 bias를 모든 bias의 값을 저장할 딕셔너리에 추가
     biases_dic[now_layer_name] = init_bias([fc_layers_units[-1]], bias_init_type)
-
 
     ### 설정한 weight와 bias의 값들에 맞춰 생성된 weight의 이름(list), weight의 값(dictionary), bias의 값(dictionary), 첫 fully-connected layer의 input의 길이를 리턴
     return weight_names_list, weights_dic, biases_dic, fc_input_length
@@ -296,6 +302,8 @@ def make_feature_extraction_part (CNN_input_data, dic_weight, dic_bias, list_wei
             ##  Activation function 적용
             #   ReLU 이용
             after_relu = tf.nn.relu((after_conv + dic_bias[list_weight_name[(last_choice_name + j)]]))
+            #after_relu = tf.keras.layers.PReLU((after_conv + dic_bias[list_weight_name[(last_choice_name + j)]]))
+
             #   해당 activation function의 feature map 이름을 지정
             now_featuremap_name = list_weight_name[(last_choice_name + j)] + '_relu'
             #   Activation function을 통해 만들어진 feature map을 설장한 이름으로 전체 feature maps을 저장할 딕셔너리에 저장
@@ -406,6 +414,7 @@ def make_classification_part (last_layer_output, dic_weight, dic_bias, list_weig
 
         ##  ReLU(activation function) 실시
         after_relu = tf.nn.relu(fully_connected)
+        #after_relu = tf.keras.layers.PReLU(fully_connected)
         #   해당 kernel의 feature map 이름을 지정
         now_featuremap_name = list_weight_name[(last_choice_name + i)] + '_ReLU'
         #   해당 kernel을 통해 만들어진 feature map을 설장한 이름으로 전체 feature maps을 저장할 딕셔너리에 저장
@@ -437,16 +446,39 @@ def make_classification_part (last_layer_output, dic_weight, dic_bias, list_weig
 
 
 
+### RNN에서 hidden layer의 cells을 만들기 위한 함수
+def lstm_cell(rnn_cell_hidden_dim, forget_bias, keep_prob):
+    # LSTM셀을 생성
+    # num_units: 각 Cell 출력 크기
+    # forget_bias:  to the biases of the forget gate
+    #              (default: 1)  in order to reduce the scale of forgetting in the beginning of the training.
+    # state_is_tuple: True ==> accepted and returned states are 2-tuples of the c_state and m_state.
+    # state_is_tuple: False ==> they are concatenated along the column axis.
+    cell = tf.contrib.rnn.LSTMCell(num_units=rnn_cell_hidden_dim,
+                                        forget_bias=forget_bias, state_is_tuple=True, activation=tf.nn.tanh)
+    if keep_prob < 1.0:
+        cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=keep_prob)
+    print('LSTM cell을 생성하였습니다.')
+    return cell
 
 
 
+### RNN에서 hidden layer을 원하는 수 만큼 쌓기 위한 함수
+def stacked_rnn(rnn_cell_hidden_dim, forget_bias, keep_prob, input_data, output_data_column_cnt, num_stacked_layers):
+    # num_stacked_layers개의 층으로 쌓인 Stacked RNNs 생성
+    stackedRNNs = [lstm_cell(rnn_cell_hidden_dim, forget_bias, keep_prob) for _ in range(num_stacked_layers)]
+    multi_cells = tf.contrib.rnn.MultiRNNCell(stackedRNNs,
+                                              state_is_tuple=True) if num_stacked_layers > 1 else lstm_cell()
+    print('Stacked cell을 생성하였습니다.')
 
+    # LSTM Cell들을 연결
+    hypothesis, _states = tf.nn.dynamic_rnn(multi_cells, input_data, dtype=tf.float32)
+    print('생성된 cell들을 연결하였습니다.')
 
+    # LSTM RNN의 마지막 (hidden)출력만을 사용했다.
+    hypothesis = tf.contrib.layers.fully_connected(hypothesis[:, -1], output_data_column_cnt, activation_fn=tf.identity)
 
-
-
-
-
+    return hypothesis
 
 
 
@@ -510,7 +542,7 @@ def make_cnn_architecture (data_set,
     ##  Classification이나 regression을 진행하는 부분
     if choice_part[1] == 'CNN_classification' :
         ##  Classification 부분에 해당하는 fully-connected layer, output layer의 구조 형성
-        print('CNN 중 classification 부분의 구조를 생성하고 있습니다.')
+        print() ; print('CNN 중 classification 부분의 구조를 생성하고 있습니다.')
         all_featuremaps, py_x, featuremaps_names = make_classification_part(input_data, weights_dic, biases_dic, weight_names_list, featuremaps_names,
                                                                             all_featuremaps,
                                                                             fc_layers_num, fc_input_len, fc_name_start_point, fc_dropout,
@@ -519,25 +551,21 @@ def make_cnn_architecture (data_set,
 
         ##  CNN과 RNN 사이의 fully-connected는 한 번만 시행하는데 설정이 한 번이 아닌 경우 경고문을 출력
         if not fc_layers_num == 1 :
-            print('Fully connected layer의 값이 1인지 확인해주세요!')
+            print() ; print('Fully connected layer의 값이 1인지 확인해주세요!')
 
         ##  CNN-Fullyconnected-RNN에서 fully-connected 부분을 생성
-        print('CNN에서 RNN으로 넘어갈 때 fully connected를 해주고 있습니다.')
+        print() ; print('CNN에서 RNN으로 넘어갈 때 fully connected를 해주고 있습니다.')
         all_featuremaps, py_x, featuremaps_names = make_classification_part(input_data, weights_dic, biases_dic, weight_names_list, featuremaps_names,
                                                                             all_featuremaps,
                                                                             fc_layers_num, fc_input_len, fc_name_start_point, fc_dropout,
                                                                             choice_part[1], rnn_input_length)
 
+        ##  RNN 부분 생성 (현재 LSTM)
+        #hypothesis = stacked_rnn(rnn_cell_hidden_dim, forget_bias, keep_prob, output_value, output_data_column_cnt, num_stacked_layers)
+
 
     ##  모든 feature maps이 저장된 딕셔너리와 최종 output layer의 값을 리턴
     return  all_featuremaps, py_x, featuremaps_names
-
-
-
-
-
-
-
 
 
 
@@ -658,29 +686,30 @@ def cnn_training (train_data, train_num_label, weights_dic, biases_dic, all_feat
             accuracy_sum_per_epoch = accuracy_sum_per_epoch + accuracy_per_batch
 
             ##  마지막 epoch에서만 실제 label과 예측된 label을 비교
-            if i == (epoch_num-1) :
-                if batch_times == 1 :
-                    print()
-                # 분류 정확히 하였나 직접 비교
-                print(str(train_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 실제 class 는   : ', (sess.run(tf.argmax(Y,1), feed_dict={Y: trY[start:end]})) + 1)
-                print(str(train_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 계산된 class 는 : ', (sess.run(tf.argmax(py_x,1), feed_dict={X: trX[start:end],  p_keep_conv: 1.0, p_keep_hidden: 1.0}) + 1))
+            # if i == (epoch_num-1) :
+            #     if batch_times == 1 :
+            #         print()
+            #     # 분류 정확히 하였나 직접 비교
+            #     print(str(train_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 실제 class 는   : ', (sess.run(tf.argmax(Y,1), feed_dict={Y: trY[start:end]})) + 1)
+            #     print(str(train_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 계산된 class 는 : ', (sess.run(tf.argmax(py_x,1), feed_dict={X: trX[start:end],  p_keep_conv: 1.0, p_keep_hidden: 1.0}) + 1))
 
 
         ##  계속 더해진 accuracy를 batch 횟수로 나눠 accuracy의 평균을 계산하여 저장
         #   한 epcoh 당 평균 accuracy를 계산
-        acc_avg_train = accuracy_sum_per_epoch / batch_times
+        acc_avg_train = round(((accuracy_sum_per_epoch / batch_times) * 100), 2)
         #   계산된 accuracy를 저장할 리스트에 저장
         accuracies_train.append(acc_avg_train)
         #   평균 정확도를 확인
-        print() ; print(str(i+1) + '번째 epoch에서의 정확도는 %.4f 입니다.' %acc_avg_train)
+        # print() ; print(str(i+1) + '번째 epoch에서의 정확도는 %.4f 입니다.' %acc_avg_train)
 
         #####   Epoch의 overfitting 방지 지점 찾기 위해 넣은 부분
-        loss_per_batch, test_accuracy_per_batch = sess.run([cost, accuracy], feed_dict={X: teX, Y: teY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
-        accuracies_test.append(test_accuracy_per_batch)
+        # loss_per_batch, test_accuracy_per_batch = sess.run([cost, accuracy], feed_dict={X: teX, Y: teY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
+        # accuracies_test.append(round(((test_accuracy_per_batch) * 100), 2))
 
     ##  학습이 다 된 후 확인이 필요한 변수들 저장 (weights, biases, 각 layer의 feature maps, 최종 예측 output)
-    weight_vals, biases_vals, train_layers_result, output_pred = sess.run([weights_dic, biases_dic, all_featuremaps, tf.argmax(py_x, 1)], feed_dict={X: trX, Y: trY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
+    weight_vals, biases_vals, train_layers_result, output_target, output_pred = sess.run([weights_dic, biases_dic, all_featuremaps, tf.argmax(Y,1), tf.argmax(py_x, 1)], feed_dict={X: trX, Y: trY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
 
+    '''
     ##  각 epoch당 구해진 평균 정확도를 그려서 변화 확인
     plt.figure(1)
     plt.plot(accuracies_train, 'blue')
@@ -689,9 +718,10 @@ def cnn_training (train_data, train_num_label, weights_dic, biases_dic, all_feat
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.show()
+    '''
 
     ##
-    return  accuracies_train, train_layers_result, weight_vals, biases_vals, output_pred.reshape(len(output_pred), 1), ini_weights_val, ini_biases_val
+    return  accuracies_train, train_layers_result, weight_vals, biases_vals, output_target.reshape(len(output_target)), output_pred.reshape(len(output_pred), 1), ini_weights_val, ini_biases_val
 
 
 
@@ -756,8 +786,8 @@ def cnn_test (test_data, test_num_label, all_featuremaps,
             accuracy_sum_per_epoch = accuracy_sum_per_epoch + accuracy_per_batch
 
             ##  실제 label과 예측된 label을 비교
-            print(str(test_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 실제 class 는   : ', sess.run(tf.argmax(Y, 1), feed_dict={Y: teY[start:end]}))
-            print(str(test_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 계산된 class 는 : ', sess.run(tf.argmax(py_x, 1), feed_dict={X: teX[start:end], p_keep_conv: 1.0, p_keep_hidden: 1.0}))
+            # print(str(test_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 실제 class 는   : ', sess.run(tf.argmax(Y, 1), feed_dict={Y: teY[start:end]}))
+            # print(str(test_data.shape[0] // batch_size), ' 중에서 ', batch_times, ' 번째 계산된 class 는 : ', sess.run(tf.argmax(py_x, 1), feed_dict={X: teX[start:end], p_keep_conv: 1.0, p_keep_hidden: 1.0}))
 
 
 
@@ -782,7 +812,7 @@ def cnn_test (test_data, test_num_label, all_featuremaps,
 
         ##  계속 더해진 accuracy를 batch 횟수로 나눠 accuracy의 평균을 계산하여 저장
         #   한 epcoh 당 평균 accuracy를 계산
-        acc_avg_test = accuracy_sum_per_epoch / batch_times
+        acc_avg_test = round(((accuracy_sum_per_epoch / batch_times) * 100), 2)
         #   계산된 accuracy를 저장할 리스트에 저장
         accuracies_test.append(acc_avg_test)
         #   정확도를 확인
@@ -791,11 +821,11 @@ def cnn_test (test_data, test_num_label, all_featuremaps,
 
 
     ##  Test의 각 layer를 통과한 feature maps과 최종 예측 output을 확인하기 위해 저장
-    test_layers_result, output_pred = sess.run([all_featuremaps, tf.argmax(py_x, 1)], feed_dict={X: teX, Y: teY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
+    test_layers_result, output_target, output_pred = sess.run([all_featuremaps, tf.argmax(Y, 1), tf.argmax(py_x, 1)], feed_dict={X: teX, Y: teY, p_keep_conv: 1.0, p_keep_hidden: 1.0})
 
 
     ##
-    return  accuracies_test, test_layers_result, output_pred.reshape(len(output_pred), 1) #, confusion_matrix_each_validation
+    return  accuracies_test, test_layers_result, output_target.reshape(len(output_target)), output_pred.reshape(len(output_pred), 1) #, confusion_matrix_each_validation
 
 
 

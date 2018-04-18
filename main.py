@@ -17,11 +17,13 @@
 ### 사용할 lib 소환
 from data_preparation import *
 from CNN_algorithms import *
+from data_representation import *
 
 # 이미지를 출력하거나 plot을 그리기 위해
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
 ### Deep learning을 위한 data를 준비하면서 필요한 고정 변수들
 ##  Files의 이름과 주소를 불러오는 함수에 사용됨.
@@ -82,46 +84,46 @@ EMG_row= 1
 
 ##  CNN을 돌리기 위한 변수들
 #
-weight_init_type = 0
+weight_init_type = 1
 #
-bias_init_type = 0
+bias_init_type = 1
 
 #   Convolutional layer의 수 (얼마나 deep한지를 결정)
 conv_layer_number = 1
-#   한 개의 convolutional layer에서 몇 개의 서로 다른 filter를 사용하여 특징을 뽑아낼 것인지 지정
-#   각 원소는 차례대로 각 layer에 존재하는 서로 다른 filter의 개수를 의미
-conv_width_number = [5]
-#   Convolutional layer에 존재하는 모든 filter의 size 지정
-#   행 : 각 layer를 의미, 열 : 각 layer에 존재하는 서로 다른 filter들의 각각의 size를 의미
-conv_kernel_size = [[3, 5, 7, 9, 11]]
-#   Convolutional layer에 존재하는 모든 filter의 개수 지정
-#   행 : 각 layer를 의미, 열 : 각 layer에 존재하는 서로 다른 filter들의 각각의 개수를 의미
-conv_kernel_number = [[32, 32, 32, 32, 32]]
+#   한 개의 convolutional layer마다 width를 어디까지 늘려서 정확도를 확인할지 지정
+conv_width_range = np.arange(1,(5 + 1), 1)
+
+#   Kernel의 size를 어디까지 늘려서 정확도를 확인할지 지정 ([시작 , 끝])
+#conv_kernel_size_range = [3, 7]
+# #conv_kernel_size_range = [3, 9, 15, 19, 23] #np.arange(3, 25, 2)
+conv_kernel_size_range = [1, 3, 5]
+#   Kernel의 개수를 어디까지 늘려서 정확도를 확인할지 지정 ([시작, 끝])
+conv_kernel_num_range = [16, 32, 64] #[8, 16, 32, 64, 128]
 
 #
 pooling_location = [1]
 pooling_layer_number = len(pooling_location)
 #
-pooling_size = 2
+pooling_size = 1
 #
-pooling_stride = 2
+pooling_stride = 1
 
 #
 fullyconnected_layer_number = 1
-#
-#fullyconnected_layer_unit = [100] #[1024, 1024]
-fullyconnected_layer_unit = [seq_length]
+#0
+fullyconnected_layer_unit = [100] #[1024, 1024]
+#fullyconnected_layer_unit = [seq_length]
 
 #
 conv_dropout_ratio = 0.0
 fc_dropout_ratio = 0.5
 #
-#wanted_parts = ['CNN_feature', 'CNN_classification']
-wanted_parts = ['CNN_feature', 'fc_RNN_regression']
+wanted_parts = ['CNN_feature', 'CNN_classification']
+#wanted_parts = ['CNN_feature', 'fc_RNN_regression']
 
 
 learning_speed = 1e-4
-epoch_num = 2
+epoch_num = 300
 batch_size = 20
 
 
@@ -371,178 +373,366 @@ print('첫번째 test label에서 1이 나온 위치는 : ', np.where(test_label
 print('=' * 100) ; print('=' * 100) ; print('이제부터는 본격적으로 CNN training에 들어갑니다.') ; print('=' * 100) ; print('=' * 100)
 
 
+### 최적의 상태를 찾기 위해 for 구문을 시행
+##  매 반복에서의 최종 train, test 정확도를 저장해기 위해 필요한 변수 초기화
+#   Train 정확도를 저장하기 위한 list 변수 초기화
+total_train_accuracies = []
+#   Test 정확도를 저장하기 위한 list 변수 초기화
+total_test_accuracies = []
+#   Train과 test의 정확도 이름을 저장할 list 변수 초기화 (그래야 그래프에서 x축에 이름을 넣을 수 있음)
+total_accuracy_names = []
+#   Weight 초기화 방법에서 xavier 사용시 이름이 매번 달라야 해서 인위적으로 매 반복마다 업데이트 되는 정수 초기화
+iter_order = 0
 
-### Deep learning 구조를 만들고 학습하고 테스트하는데 필요한 변수지만 앞에서 지정한 값에 의해 자동으로 정해지는 변수들
-##  나중에 training와 validation, test시 data와 label 입력을 위해 data type과 size 먼저 지정 (구체적인 값은 나중에 지정)
-#   Data를 입력할 변수의 data type과 size 지정 (None은 batch size에 따라 바뀌므로 특정한 값으로 지정하지 않은 것)
-#X = tf.placeholder("float", [None, 1, seq_length, EMG_ch_num])
-X = tf.placeholder("float", [None, seq_length, EMG_chs_num])
-#   Label을 입력할 변수의 label type과 size 지정 (None은 batch size에 따라 바뀌므로 특정한 값으로 지정하지 않은 것)
-Y = tf.placeholder("float", [None, x_axis_class_numer])
+##  반복 시행
+#for loop_width in conv_width_range :
 
-##  Dropout을 사용하기 위해 dropout의 변수 type을 설정 (역시 구체적인 값은 나중에 지정)
-#   Convolutional layer(ReLU, Pooling 다 포함한 용어)에 적용할 dropout type 지정
-p_keep_conv = tf.placeholder("float")
-#   Fully connected layer에 적용할 dropout type 지정
-p_keep_hidden = tf.placeholder("float")
+    #itertools.product()
 
+#for loop_size in range(conv_kernel_size_range[0], (conv_kernel_size_range[1] + 1)) :
+for loop_size in conv_kernel_size_range :
 
+    #for loop_num in range(conv_kernel_num_range[0], (conv_kernel_num_range[1] + 1)) :
+    for loop_num in conv_kernel_num_range :
 
-### CNN을 돌리기 위해 필요한 weight와 bias들을 원하는 값에 맞춰 생성
-#   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
-print('=' * 100) ; print('설정한 weight와 bias의 크기와 사이즈, layer의 깊이와 넓이에 맞게 초기화된 weight와 bias들을 생성하기 시작하였습니다.') ; print()
-weight_names, weights, biases, fisrt_fc_input_len =  make_wei_bias (conv_layer_number, conv_width_number, conv_kernel_size, conv_kernel_number, pooling_layer_number, pooling_size, pooling_stride,
-                                                                    fullyconnected_layer_number, fullyconnected_layer_unit,
-                                                                    EMG_row, seq_length, EMG_chs_num, x_axis_class_numer,
-                                                                    weight_init_type, bias_init_type)
-print('초기화된 weight와 bias를 모두 생성하였습니다.') ; print()
+        #   Weight 초기화 방법에서 xavier 사용시 이름이 매번 달라야 해서 인위적으로 매 반복마다 업데이트
+        iter_order = iter_order + 1
 
-with tf.Session() as sess :
-    init = tf.global_variables_initializer()
-    sess.run(init)
-
-    print('모든 weight(or bias)의 이름은 : ')
-    print(weight_names)
-
-    for i in range(len(weight_names)) :
-        print(weight_names[i], '에 있는 weight의 type은 : ', type(sess.run(weights[weight_names[i]])))
-        print(weight_names[i], '에 있는 weight의 크기는 : ', (sess.run(weights[weight_names[i]])).shape)
-        #print(weight_names[i], '에 있는 weight의 값은 : ')
-        #print((sess.run(weights[weight_names[i]])))
-
-    for i in range(len(weight_names)):
-        print(weight_names[i], '에 있는 bias의 type은 : ', type(sess.run(biases[weight_names[i]])))
-        print(weight_names[i], '에 있는 bias의 크기는 : ', (sess.run(biases[weight_names[i]])).shape)
-        #print(weight_names[i], '에 있는 bias의 값은 : ')
-        #print((sess.run(biases[weight_names[i]])))
-
-print('첫 fully-connected layer의 input으로 들어가는 data의 길이는 : ', fisrt_fc_input_len)
+        print() ; print('Kernel size ', conv_kernel_size_range, '와 kernel 개수 ', conv_kernel_num_range, '중에서')
+        print('[[[[[지금은 kernel size가 ', str(loop_size), '일 때 kernel의 개수가 ', str(loop_num), '일 때 입니다.]]]]]') ; print()
 
 
+        #   한 개의 convolutional layer에서 몇 개의 서로 다른 filter를 사용하여 특징을 뽑아낼 것인지 지정
+        #   각 원소는 차례대로 각 layer에 존재하는 서로 다른 filter의 개수를 의미
+        conv_width_number = [1]
 
-### 초기화된 weight와 bias들을 이용하여 원하는 CNN 구조를 생성
-#   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
-print('=' * 100) ; print('초기화된 weight와 bias들을 이용하여 원하는 CNN 구조를 생성하기 시작하였습니다.') ; print()
-featuremaps, output_value, all_featuremaps_names = make_cnn_architecture (X,
-                                                                          weights, biases, weight_names,
-                                                                          conv_layer_number, conv_width_number, pooling_location, pooling_size, pooling_stride,
-                                                                          fullyconnected_layer_number, fisrt_fc_input_len,
-                                                                          p_keep_conv, p_keep_hidden,
-                                                                          wanted_parts, seq_length)
+        #   Convolutional layer에 존재하는 모든 filter의 size 지정
+        #   행 : 각 layer를 의미, 열 : 각 layer에 존재하는 서로 다른 filter들의 각각의 size를 의미
+        # conv_kernel_size = [[3, 5, 7, 9, 11]]
+        conv_kernel_size = [[loop_size]]
 
-#featuremaps_keys = list(featuremaps.keys())
-featuremaps_keys = all_featuremaps_names
-print('feature maps 딕셔너리에 있는 keys는 :') ; print(featuremaps_keys)
-for i in range(len(featuremaps_keys)) :
-    print(featuremaps_keys[i], '안에 있는 feature map의 tensor는 : ', featuremaps[featuremaps_keys[i]])
-print('Output layer의 값은 : ') ; print(output_value)
+        #   Convolutional layer에 존재하는 모든 filter의 개수 지정
+        #   행 : 각 layer를 의미, 열 : 각 layer에 존재하는 서로 다른 filter들의 각각의 개수를 의미
+        # conv_kernel_number = [[32, 32, 32, 32, 32]]
+        conv_kernel_number = [[loop_num]]
+
+
+        ### Deep learning 구조를 만들고 학습하고 테스트하는데 필요한 변수지만 앞에서 지정한 값에 의해 자동으로 정해지는 변수들
+        ##  나중에 training와 validation, test시 data와 label 입력을 위해 data type과 size 먼저 지정 (구체적인 값은 나중에 지정)
+        #   Data를 입력할 변수의 data type과 size 지정 (None은 batch size에 따라 바뀌므로 특정한 값으로 지정하지 않은 것)
+        #X = tf.placeholder("float", [None, 1, seq_length, EMG_ch_num])
+        X = tf.placeholder("float", [None, seq_length, EMG_chs_num])
+        #   Label을 입력할 변수의 label type과 size 지정 (None은 batch size에 따라 바뀌므로 특정한 값으로 지정하지 않은 것)
+        Y = tf.placeholder("float", [None, x_axis_class_numer])
+
+        ##  Dropout을 사용하기 위해 dropout의 변수 type을 설정 (역시 구체적인 값은 나중에 지정)
+        #   Convolutional layer(ReLU, Pooling 다 포함한 용어)에 적용할 dropout type 지정
+        p_keep_conv = tf.placeholder("float")
+        #   Fully connected layer에 적용할 dropout type 지정
+        p_keep_hidden = tf.placeholder("float")
 
 
 
-### 형성된 CNN 구조를 가지고 training 시행
-print('=' * 100) ; print('형성된 CNN 구조를 이용하여 학습을 시작합니다.') ; print()
-train_accuracies, train_featuremaps, updated_weights, updated_biases, estimated_trainset_output, initial_weights, initial_biases = \
-    cnn_training (train_data_set, train_label, weights, biases, featuremaps,
-                  seq_length, EMG_chs_num,
-                  output_value, X, Y, p_keep_conv, p_keep_hidden, learning_speed, epoch_num, batch_size,
-                  conv_dropout_ratio, fc_dropout_ratio,
-                  test_data_set, test_label)
+        ### CNN을 돌리기 위해 필요한 weight와 bias들을 원하는 값에 맞춰 생성
+        #   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
+        print('=' * 100) ; print('설정한 weight와 bias의 크기와 사이즈, layer의 깊이와 넓이에 맞게 초기화된 weight와 bias들을 생성하기 시작하였습니다.') ; print()
+        weight_names, weights, biases, fisrt_fc_input_len =  make_wei_bias (conv_layer_number, conv_width_number, conv_kernel_size, conv_kernel_number, pooling_layer_number, pooling_size, pooling_stride,
+                                                                            fullyconnected_layer_number, fullyconnected_layer_unit,
+                                                                            EMG_row, seq_length, EMG_chs_num, x_axis_class_numer,
+                                                                            weight_init_type, bias_init_type , iter_order)
+        print('초기화된 weight와 bias를 모두 생성하였습니다.') ; print()
 
-print('Train set에 대한 estimated label의 크기는 : ') ; print(estimated_trainset_output.shape)
+        with tf.Session() as sess :
+            init = tf.global_variables_initializer()
+            sess.run(init)
 
-### Class를 다시 숫자로 바꾸는 부분 (학습 후 필요!!!!!!!!!!!!)
-#   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
-print('=' * 100) ; print('그래프를 그리기 위해 label을 다신 대표값으로 바꾸는 중') ; print()
-estimated_target_value = return_value (estimated_trainset_output, x_axis_class_numer, train_target_minimum, train_gap_in_class)
-print()
-print('Train set에서 estimated label에 의거하여 대표값을 대입한 결과의 type은 : ', type(estimated_target_value))
-print('Train set에서 estimated label에 의거하여 대표값을 대입한 결과의 크기는 (원래 train_target_set의 크기와 같으면 됨.) : ', (estimated_target_value).shape)
-print('첫번째 train target 값은 : ') ; print(train_target_set[0])
-print('첫번째 estimated target value는 : ') ; print(estimated_target_value[0])
-'''
-##  원래 값과 label을 다시 값으로 바꾼 대표값 사이의 차이 정도를 보기 위해 그래프 출력
-for i in range(len(train_files_name)) :
-    plt.figure(i)
-    if i == 0 :
-        plt_start = 0
-        plt_end = adjusted_length[shuf_total_files_name[i]]
-    else :
-        plt_start = plt_start + adjusted_length[shuf_total_files_name[i-1]]
-        plt_end = plt_end + adjusted_length[shuf_total_files_name[i]]
-    plt.plot(train_target_set[plt_start: plt_end], 'blue')
-    plt.plot(estimated_target_value[plt_start: plt_end], 'red')
-    plt.title('Actual marker value vs Estimated marker value (1st marker, x-axis)')
-    plt.xlabel('Adjusted Time (Real experiment time - window size)')
-    plt.ylabel('Value (x-axis)')
-plt.show()
-'''
+            print('모든 weight(or bias)의 이름은 : ')
+            print(weight_names)
 
-##  csv 파일로 저장
-save_file_name = './' + experiment_name + '_convdeep_' + conv_layer_number + '_convwidth_' + conv_width_number[0] +\
-                 '_fcdeep_' + fullyconnected_layer_number + '_fcunit_' + fullyconnected_layer_unit[0] +\
-                 '_epoch_' + epoch_num + '_finalaccuracy_' + train_accuracies[-1]
-save_file_name_feature = save_file_name + '_featuremaps'
-#for i in range(conv_layer_number) :
+            for i in range(len(weight_names)) :
+                print(weight_names[i], '에 있는 weight의 type은 : ', type(sess.run(weights[weight_names[i]])))
+                print(weight_names[i], '에 있는 weight의 크기는 : ', (sess.run(weights[weight_names[i]])).shape)
+                #print(weight_names[i], '에 있는 weight의 값은 : ')
+                #print((sess.run(weights[weight_names[i]])))
 
-with open(save_file_name_feature, 'at', newline = '') as csvfile :
-    writer = csv.writer(csvfile, delimiter = ',')
+            for i in range(len(weight_names)):
+                print(weight_names[i], '에 있는 bias의 type은 : ', type(sess.run(biases[weight_names[i]])))
+                print(weight_names[i], '에 있는 bias의 크기는 : ', (sess.run(biases[weight_names[i]])).shape)
+                #print(weight_names[i], '에 있는 bias의 값은 : ')
+                #print((sess.run(biases[weight_names[i]])))
 
-    writer.writerrow(['Original'] + list())
-    for j in range(len(all_featuremaps_names)) :
-        writer.writerrow([all_featuremaps_names[j]])
+        print('첫 fully-connected layer의 input으로 들어가는 data의 길이는 : ', fisrt_fc_input_len)
 
 
 
+        ### 초기화된 weight와 bias들을 이용하여 원하는 CNN 구조를 생성
+        #   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
+        print('=' * 100) ; print('초기화된 weight와 bias들을 이용하여 원하는 CNN 구조를 생성하기 시작하였습니다.') ; print()
+        featuremaps, output_value, all_featuremaps_names = make_cnn_architecture (X,
+                                                                                  weights, biases, weight_names,
+                                                                                  conv_layer_number, conv_width_number, pooling_location, pooling_size, pooling_stride,
+                                                                                  fullyconnected_layer_number, fisrt_fc_input_len,
+                                                                                  p_keep_conv, p_keep_hidden,
+                                                                                  wanted_parts, seq_length)
+
+        #featuremaps_keys = list(featuremaps.keys())
+        featuremaps_keys = all_featuremaps_names
+        print('feature maps 딕셔너리에 있는 keys는 :') ; print(featuremaps_keys)
+        for i in range(len(featuremaps_keys)) :
+            print(featuremaps_keys[i], '안에 있는 feature map의 tensor는 : ', featuremaps[featuremaps_keys[i]])
+        print('Output layer의 값은 : ') ; print(output_value)
+
+
+
+        ### 형성된 CNN 구조를 가지고 training 시행
+        print('=' * 100) ; print('형성된 CNN 구조를 이용하여 학습을 시작합니다.') ; print()
+        train_accuracies, train_featuremaps, updated_weights, updated_biases, target_trainset_output, estimated_trainset_output, initial_weights, initial_biases = \
+            cnn_training (train_data_set, train_label, weights, biases, featuremaps,
+                          seq_length, EMG_chs_num,
+                          output_value, X, Y, p_keep_conv, p_keep_hidden, learning_speed, epoch_num, batch_size,
+                          conv_dropout_ratio, fc_dropout_ratio,
+                          test_data_set, test_label)
+
+        print('Train set에 대한 setimated label의 type은 ; ') ; print(type(estimated_trainset_output))
+        print('Train set에 대한 estimated label의 크기는 : ') ; print(estimated_trainset_output.shape)
+
+        ### Class를 다시 숫자로 바꾸는 부분 (학습 후 필요!!!!!!!!!!!!)
+        #   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
+        print('=' * 100) ; print('그래프를 그리기 위해 label을 다신 대표값으로 바꾸는 중') ; print()
+        estimated_train_target_value = return_value (estimated_trainset_output, x_axis_class_numer, train_target_minimum, train_gap_in_class)
+        print()
+        print('Train set에서 estimated label에 의거하여 대표값을 대입한 결과의 type은 : ', type(estimated_train_target_value))
+        print('Train set에서 estimated label에 의거하여 대표값을 대입한 결과의 크기는 (원래 train_target_set의 크기와 같으면 됨.) : ', (estimated_train_target_value).shape)
+        print('첫번째 train target 값은 : ') ; print(train_target_set[0])
+        print('첫번째 estimated target value는 : ') ; print(estimated_train_target_value[0])
+        '''
+        ##  원래 값과 label을 다시 값으로 바꾼 대표값 사이의 차이 정도를 보기 위해 그래프 출력
+        for i in range(len(train_files_name)) :
+            plt.figure(i)
+            if i == 0 :
+                plt_start = 0
+                plt_end = adjusted_length[shuf_total_files_name[i]]
+            else :
+                plt_start = plt_start + adjusted_length[shuf_total_files_name[i-1]]
+                plt_end = plt_end + adjusted_length[shuf_total_files_name[i]]
+            plt.plot(train_target_set[plt_start: plt_end], 'blue')
+            plt.plot(estimated_target_value[plt_start: plt_end], 'red')
+            plt.title('Actual marker value vs Estimated marker value (1st marker, x-axis)')
+            plt.xlabel('Adjusted Time (Real experiment time - window size)')
+            plt.ylabel('Value (x-axis)')
+        plt.show()
+        '''
+
+        ### 학습된 CNN 구조와 파라미터를 가지고 test 시행
+        featuremaps, output_value, _ = make_cnn_architecture (X,
+                                                              updated_weights, updated_biases, weight_names,
+                                                              conv_layer_number, conv_width_number, pooling_location, pooling_size, pooling_stride,
+                                                              fullyconnected_layer_number, fisrt_fc_input_len,
+                                                              p_keep_conv, p_keep_hidden,
+                                                              wanted_parts, seq_length)
+
+        test_accuracies, test_featuremaps, target_testset_output, estimated_testset_output = \
+            cnn_test (test_data_set, test_label, featuremaps,
+                      seq_length, EMG_chs_num, batch_size,
+                      output_value, X, Y, p_keep_conv, p_keep_hidden)
+
+        print('Test set에 대한 setimated label의 type은 ; '); print(type(estimated_testset_output))
+        print('Test set에 대한 estimated label의 크기는 : ') ; print(estimated_testset_output.shape)
+
+
+
+        ### Class를 다시 숫자로 바꾸는 부분 (학습 후 필요!!!!!!!!!!!!)
+        #   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
+        print('=' * 100) ; print('그래프를 그리기 위해 label을 다신 대표값으로 바꾸는 중') ; print()
+        estimated_test_target_value = return_value (estimated_testset_output, x_axis_class_numer, train_target_minimum, train_gap_in_class)
+        print()
+        print('Test set에서 estimated label에 의거하여 대표값을 대입한 결과의 type은 : ', type(estimated_test_target_value))
+        print('Test set에서 estimated label에 의거하여 대표값을 대입한 결과의 크기는 (원래 train_target_set의 크기와 같으면 됨.) : ', (estimated_test_target_value).shape)
+        print('첫번째 train target 값은 : ') ; print(train_target_set[0])
+        print('첫번째 estimated target value는 : ') ; print(estimated_test_target_value[0])
+
+        '''
+        ##  원래 값과 label을 다시 값으로 바꾼 대표값 사이의 차이 정도를 보기 위해 그래프 출력
+        for i in range(len(test_files_name)) :
+            plt.figure(i)
+            if i == 0 :
+                plt_start = 0
+                plt_end = adjusted_length[test_files_name[i]]
+            else :
+                plt_start = plt_start + adjusted_length[test_files_name[i-1]]
+                plt_end = plt_end + adjusted_length[test_files_name[i]]
+            plt.plot(test_target_set[plt_start: plt_end], 'blue')
+            plt.plot(estimated_target_value[plt_start: plt_end], 'red')
+        plt.show()
+        '''
+
+        #   매 반복당 최종 epoch에서의 정확도를 train과 test set 별로 저장
+        total_train_accuracies.append(train_accuracies[-1])
+        total_test_accuracies.append(test_accuracies[-1])
+        now_accuracy_name = 'size_' + str(loop_size) + '_num_' + str(loop_num)
+        total_accuracy_names.append(now_accuracy_name)
 
 
 
 
 
-### 학습된 CNN 구조와 파라미터를 가지고 test 시행
-featuremaps, output_value = make_cnn_architecture (X,
-                                                   updated_weights, updated_biases, weight_names,
-                                                   conv_layer_number, conv_width_number, pooling_location, pooling_size, pooling_stride,
-                                                   fullyconnected_layer_number, fisrt_fc_input_len,
-                                                   p_keep_conv, p_keep_hidden)
+        import os
+        ##  csv 파일로 저장
+        #   저장할 폴더명 생성
+        save_folder_name = './' + experiment_name + '_convdeep_' + str(conv_layer_number) + '_convwidth_' + str(conv_width_number[0]) +\
+                           '_fcdeep_' + str(fullyconnected_layer_number) + '_fcunit_' + str(fullyconnected_layer_unit[0]) + '_epoch_' + str(epoch_num)
 
-test_accuracies, test_featuremaps, estimated_testset_output = cnn_test (test_data_set, test_label, featuremaps,
-                                                                        seq_length, EMG_chs_num, batch_size,
-                                                                        output_value, X, Y, p_keep_conv, p_keep_hidden)
+        #   설정한 이름의 폴더가 있는지 확인 후 없으면 생성
+        if not os.path.isdir(save_folder_name) :
+            os.mkdir(save_folder_name)
 
-print('Test set에 대한 estimated label의 크기는 : ') ; print(estimated_testset_output.shape)
+        ##  매 반복마다의 정확도를 저장
+        #   파일 이름 지정
+        save_file_name = save_folder_name + '/loop_accuracy_summary'
+        save_file_name = save_file_name + '.csv'
+        #   파일에 저장
+        with open(save_file_name, 'at', newline = '') as csvfile :
+            writer = csv.writer(csvfile, delimiter = ',')
 
+            save_file_data = np.concatenate((train_accuracies[-1].reshape((1,1)), test_accuracies[-1].reshape((1,1))), axis=0)
+            #save_file_data = np.transpose(save_file_data)
 
+            # 맨 처음에만 열의 이름 부여
+            if (loop_size == conv_kernel_size_range[0]) and (loop_num == conv_kernel_num_range[0]) :
+                writer.writerow(['Loop_name', 'Train accuracy', 'Test accuracy'])
 
-### Class를 다시 숫자로 바꾸는 부분 (학습 후 필요!!!!!!!!!!!!)
-#   화면상 구분을 위해 ('=======================' 이걸 긋는 효과)
-print('=' * 100) ; print('그래프를 그리기 위해 label을 다신 대표값으로 바꾸는 중') ; print()
-estimated_target_value = return_value (estimated_testset_output, x_axis_class_numer, train_target_minimum, train_gap_in_class)
-print()
-print('Test set에서 estimated label에 의거하여 대표값을 대입한 결과의 type은 : ', type(estimated_target_value))
-print('Test set에서 estimated label에 의거하여 대표값을 대입한 결과의 크기는 (원래 train_target_set의 크기와 같으면 됨.) : ', (estimated_target_value).shape)
-print('첫번째 train target 값은 : ') ; print(train_target_set[0])
-print('첫번째 estimated target value는 : ') ; print(estimated_target_value[0])
-
-##  원래 값과 label을 다시 값으로 바꾼 대표값 사이의 차이 정도를 보기 위해 그래프 출력
-for i in range(len(test_files_name)) :
-    plt.figure(i)
-    if i == 0 :
-        plt_start = 0
-        plt_end = adjusted_length[test_files_name[i]]
-    else :
-        plt_start = plt_start + adjusted_length[test_files_name[i-1]]
-        plt_end = plt_end + adjusted_length[test_files_name[i]]
-    plt.plot(test_target_set[plt_start: plt_end], 'blue')
-    plt.plot(estimated_target_value[plt_start: plt_end], 'red')
-plt.show()
+            writer.writerow([str('kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num))] + save_file_data[0].tolist() + save_file_data[1].tolist())
+        csvfile.close()
 
 
+        ##  실제 마커 값과 예측한 마커값을 저장
+        #   파일 이름 지정 (Train 경우)
+        save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_trainaccuracy_' + str(train_accuracies[-1]) #+ '_testaccuracy_' + test_accuracies[-1]
+        #save_file_name_feature = save_file_name + '_featuremaps'
+        save_file_name = save_file_name + '_estimation'
+        save_file_name = save_file_name + '.csv'
+
+        #   파일에 저장
+        # for i in range(conv_layer_number) :
+        with open(save_file_name, 'at', newline = '') as csvfile :
+            writer = csv.writer(csvfile, delimiter = ',')
+
+            #   저장할 train data 편집
+            for i in range(len(train_files_name)) :
+                if i == 0 :
+                    index_start = 0
+                    index_end = adjusted_length[train_files_name[i]]
+                else :
+                    index_start = index_start + adjusted_length[train_files_name[i-1]]
+                    index_end = index_end + adjusted_length[train_files_name[i]]
+
+                #   저장된 길이를 가지고 계산한 배열의 시작점과 끝점을 가지고 원하는 부분의 data만 추출 후 전치
+                actual_target_per_trial = train_target_set[index_start:index_end]
+                actual_target_per_trial = np.transpose(actual_target_per_trial)
+                estimated_target_per_trial = estimated_train_target_value[index_start:index_end]
+                estimated_target_per_trial = np.transpose(estimated_target_per_trial)
+                #   추출한 data를 행 병합
+                save_file_data = np.concatenate((actual_target_per_trial, estimated_target_per_trial), axis=0)
+                axis_num = int(save_file_data.shape[0] / 2)
+
+                #   Target 부터 csv 파일에 기록
+                for j in range(0, axis_num) :
+                    writer.writerow([str(train_files_name[i] + ['_actual_x', '_actual_y', '_actual_z'][j])] + save_file_data[j].tolist())
+                #   예측된 값을 csv 파일에 기록
+                for j in range(axis_num, (axis_num*2)) :
+                    writer.writerow([str(train_files_name[i] + ['_estimated_x', '_estimated_y', '_estimated_z'][j-axis_num])] + save_file_data[j].tolist())
+        csvfile.close()
+
+        #   파일 이름 지정 (Test 경우)
+        save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_testaccuracy_' + str(test_accuracies[-1])  # + '_testaccuracy_' + test_accuracies[-1]
+        # save_file_name_feature = save_file_name + '_featuremaps'
+        save_file_name = save_file_name + '_estimation'
+        save_file_name = save_file_name + '.csv'
+
+        #   파일에 저장
+        # for i in range(conv_layer_number) :
+        with open(save_file_name, 'at', newline='') as csvfile:
+            writer = csv.writer(csvfile, delimiter=',')
+
+            #   저장할 test data 편집
+            for i in range(len(test_files_name)):
+                if i == 0:
+                    index_start = 0
+                    index_end = adjusted_length[test_files_name[i]]
+                else:
+                    index_start = index_start + adjusted_length[test_files_name[i - 1]]
+                    index_end = index_end + adjusted_length[test_files_name[i]]
+
+                #   저장된 길이를 가지고 계산한 배열의 시작점과 끝점을 가지고 원하는 부분의 data만 추출 후 전치
+                actual_target_per_trial = test_target_set[index_start:index_end]
+                actual_target_per_trial = np.transpose(actual_target_per_trial)
+                estimated_target_per_trial = estimated_test_target_value[index_start:index_end]
+                estimated_target_per_trial = np.transpose(estimated_target_per_trial)
+                #   추출한 data를 행 병합
+                save_file_data = np.concatenate((actual_target_per_trial, estimated_target_per_trial), axis=0)
+                axis_num = int(save_file_data.shape[0] / 2)
+
+                #   Target 부터 csv 파일에 기록
+                for j in range(0, axis_num):
+                    writer.writerow([str(test_files_name[i] + ['_actual_x', '_actual_y', '_actual_z'][j])] + save_file_data[j].tolist())
+                #   예측된 값을 csv 파일에 기록
+                for j in range(axis_num, (axis_num * 2)):
+                    writer.writerow([str(test_files_name[i] + ['_estimated_x', '_estimated_y', '_estimated_z'][j - axis_num])] + save_file_data[j].tolist())
+        csvfile.close()
+
+
+
+        ##  매 반복시마다 confusion matrix를 저장
+        #   Confusion matrix의 label을 지정
+        confusion_matrix_labels = np.arange(0+1, x_axis_class_numer+1)
+        #   Train에 대한 confusion matrix 작성
+        #save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_train_confusionmatrix'
+        #confusion_matrix_plot(target_trainset_output, estimated_trainset_output.reshape(len(estimated_trainset_output)), confusion_matrix_labels, save_file_name, save_status=True, normalize=False, title='Confusion matrix of train data set')
+        save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_train_confusionmatrix' + '_normal'
+        confusion_matrix_plot(target_trainset_output, estimated_trainset_output.reshape(len(estimated_trainset_output)), confusion_matrix_labels, save_file_name, save_status=True, normalize=True, title='Confusion matrix of train data set')
+        #   Test에 대한 confusion matrix 작성
+        #save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_test_confusionmatrix'
+        #confusion_matrix_plot(target_testset_output, estimated_testset_output.reshape(len(estimated_testset_output)), confusion_matrix_labels, save_file_name, save_status=True, normalize=False, title='Confusion matrix of test data set')
+        save_file_name = save_folder_name + '/kernelsize_' + str(loop_size) + '_kernelnum_' + str(loop_num) + '_test_confusionmatrix' + '_normal'
+        confusion_matrix_plot(target_testset_output, estimated_testset_output.reshape(len(estimated_testset_output)), confusion_matrix_labels, save_file_name, save_status=True, normalize=True, title='Confusion matrix of test data set')
+
+
+        '''
+        with open(save_file_name_feature, 'at', newline = '') as csvfile :
+            writer = csv.writer(csvfile, delimiter = ',')
+
+            writer.writerrow(['Original'] + list())
+            for j in range(len(all_featuremaps_names)) :
+                writer.writerrow([all_featuremaps_names[j]])
+        '''
 
 
 
 
+print('total_accuracy_names 은 : ')
+print(total_accuracy_names)
+print('total_train_accuracies 은 : ')
+print(total_train_accuracies)
+print('total_test_accuracies 은 : ')
+print(total_test_accuracies)
 
+##  반복을 통해 얻은 train과 test 정확도를 가지고 그래프 확인
+fig = plt.figure()
+ax = fig.add_subplot(1,1,1) #(행개수, 열개수, 그중 어느것)
+ax.plot(total_train_accuracies, 'blue', label='Train accuracy')
+ax.plot(total_test_accuracies, 'red', label='Test accuracy')
+ax.set_title('Accuracy (Train accuracy(blue) and test accuracy(red))')
+#ax.set_xlabel('Kernel size')
+ax.set_ylabel('Accuracy')
+ax.set_xticks(np.arange(len(total_accuracy_names)))
+ax.set_xticklabels(np.arange(1, (len(total_accuracy_names)+1), 1))
+#ax.set_xticklabels(total_accuracy_names)
+ax.legend(loc='upper left')
 
+save_file_name = save_folder_name + '/loop_accuracy_summary'
+save_file_name = save_file_name + '.png'
+fig.savefig(save_file_name)
+#plt.show()
 
 
 
